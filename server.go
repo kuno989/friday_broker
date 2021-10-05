@@ -78,6 +78,7 @@ func (s *Server) RegisterHandlers() {
 	api := s.Group("/api")
 	api.GET("/", s.index)
 	api.PUT("/jobStart/:sha256", s.JobStart)
+	api.POST("/jobEnd/:sha256", s.JobEnd)
 }
 
 func (s *Server) AmqpHandler(msg amqp.Delivery) error {
@@ -101,7 +102,7 @@ func (s *Server) AmqpHandler(msg amqp.Delivery) error {
 			logrus.Errorf("machine start failure %s", err)
 		}
 		logrus.Infof("%s sandbox start", vm.Name)
-		s.vmRequest(resp.MinioObjectKey, resp.Sha256, resp.FileType, "download")
+		s.vmRequest(resp.MinioObjectKey, resp.Sha256, resp.FileType, "download", "POST")
 	} else {
 		logrus.Infof("job won't start because file is not pe")
 	}

@@ -90,3 +90,14 @@ type ResponseJob struct {
 	FileType       string `json:"file_type"`
 	JobStartStatus bool   `json:"job_start_status"`
 }
+
+type ResponseAgent struct {
+	MinioObjectKey string `json:"minio_object_key,omitempty"`
+	Sha256         string `json:"sha256,omitempty"`
+	FileType       string `json:"file_type"`
+	Status 		   int `json:"status,omitempty"`
+}
+type ResponsePid struct {
+	MalwareName string `json:"malware_name"`
+	Pid          int32 `json:"pid"`
+}
