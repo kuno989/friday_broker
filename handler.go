@@ -21,6 +21,7 @@ const (
 	processing   = iota
 	finished     = iota
 	vmProcessing = iota
+	vmFinished   = iota
 )
 
 func (s *Server) index(c echo.Context) error {
@@ -49,13 +50,82 @@ func (s *Server) JobEnd(c echo.Context) error {
 	var resp = models.DBModel{}
 	err = json.Unmarshal(b, &resp)
 
-	logrus.Info("VM 종료")
+	ctx := context.Background()
 
+	var mongoResp = schema.File{}
+	buff, err := json.Marshal(mongoResp)
+
+	file, err := s.ms.FileSearch(ctx, sha256)
+	if err != nil {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			logrus.Errorf("DB에서 파일을 찾을 수 없습니다", err)
+		}
+	}
+
+	err = json.Unmarshal(buff, &file)
+	if err != nil {
+		logrus.Errorf("mongodb %v", err)
+	}
+	file.Status = vmFinished
+	file.DBModel = resp
+
+	var pid string
+	var childPID string
+	var malName string
+
+	//for _, mal := range file.DBModel.ProcessCreate {
+	//	if strings.Contains(mal.ProcessPath, sha256) && strings.Contains(mal.ProcessName, sha256){
+	//		pid = mal.ChildPID
+	//	}
+	//}
+
+	for _, mal := range file.DBModel.ProcessCreate {
+		if strings.Contains(mal.ProcessPath, sha256) && !strings.Contains(mal.Operation, `C:\Windows\system32\cmd.exe`){
+			pid = mal.ChildPID
+		}
+	}
+
+	for _, mal := range file.DBModel.ProcessCreate {
+		if mal.PID == pid {
+			pid = mal.PID
+			childPID = mal.ChildPID
+			malName = mal.ProcessName
+		}
+	}
+
+	//for _, mal := range file.DBModel.ProcessCreate {
+	//	if mal.PID == pid {
+	//		pid = mal.ChildPID
+	//		malName = mal.ProcessName
+	//	}
+	//}
+
+	file.DBModel.MalName = malName
+	file.DBModel.MalPid = pid
+	file.DBModel.MalChildPid = childPID
+	file.IsNotPE = false
+
+	file, err = s.ms.FileUpdate(ctx, file)
+	if err != nil {
+		logrus.Errorf("DB 업데이트 중 에러가 발생하였습니다", err)
+	}
+	logrus.Info("DB 업데이트 완료")
+
+	logrus.Info("메모리 덤프 중..")
+	dumpPath := s.VmDump(sha256)
+	_, err = s.minio.DumpUpload(ctx, dumpPath)
+	if err != nil {
+		logrus.Errorf("메모리 덤프 업로드 중 에러 %v", err)
+	}
+	logrus.Info("메모리 덤프 업로드 완료")
+
+	logrus.Info("VM 종료")
 	vm, err := virtualbox.GetMachine("win7")
 	if err != nil {
-		logrus.Errorf("can not find machine %s", err)
+		logrus.Errorf("can not find machine %v", err)
 	}
 	vm.Poweroff()
+
 
 	return c.JSON(http.StatusOK, schema.Response{
 		Message: "Success",
@@ -82,7 +152,6 @@ func (s *Server) JobStart(c echo.Context) error {
 	var resp = schema.ResponseAgent{}
 	err = json.Unmarshal(b, &resp)
 
-
 	file, err := s.ms.FileSearch(ctx, sha256)
 	if err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
@@ -104,8 +173,6 @@ func (s *Server) JobStart(c echo.Context) error {
 			})
 		}
 	}
-	file.Status = vmProcessing
-	file, err = s.ms.FileUpdate(ctx, file)
 	if err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return c.JSON(http.StatusInternalServerError, schema.FileResponse{
@@ -117,6 +184,18 @@ func (s *Server) JobStart(c echo.Context) error {
 	}
 
 	s.vmRequest(resp.MinioObjectKey, resp.Sha256, resp.FileType, "start", "POST")
+
+	file.Status = vmProcessing
+	_, err = s.ms.FileUpdate(ctx, file)
+	if err != nil {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return c.JSON(http.StatusInternalServerError, schema.FileResponse{
+				Sha256:      sha256,
+				Message:     err.Error(),
+				Description: "업데이트 중 에러가 발생하였습니다",
+			})
+		}
+	}
 
 	return c.JSON(http.StatusOK, schema.Response{
 		Message: "Success",

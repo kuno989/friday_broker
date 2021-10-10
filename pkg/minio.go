@@ -3,6 +3,7 @@ package pkg
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/google/wire"
 	miniogo "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -11,6 +12,7 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
+	"os"
 )
 
 var (
@@ -63,6 +65,19 @@ func (m Minio) Upload(ctx context.Context, fileInfo *multipart.FileHeader) (mini
 	buf := bytes.NewBuffer(content)
 	info, err := m.Client.PutObject(ctx, m.Config.Bucket, "sample/"+fileInfo.Filename, buf, fileInfo.Size, miniogo.PutObjectOptions{
 		ContentType: contentType,
+	})
+	if err != nil {
+		return miniogo.UploadInfo{}, err
+	}
+	return info, nil
+}
+
+func (m Minio) DumpUpload(ctx context.Context, path string) (miniogo.UploadInfo, error) {
+	file, _ := os.Open(path)
+	fileInfo, _ := file.Stat()
+	objectPath := fmt.Sprintf("dump/%s",fileInfo.Name())
+	info, err := m.Client.PutObject(ctx, m.Config.Bucket, objectPath, file, fileInfo.Size(), miniogo.PutObjectOptions{
+		ContentType: "application/octet-stream",
 	})
 	if err != nil {
 		return miniogo.UploadInfo{}, err

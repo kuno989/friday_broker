@@ -1,6 +1,7 @@
 package schema
 
 import (
+	models "github.com/kuno989/friday_connect/connect/schema/model"
 	"github.com/saferwall/pe"
 	"time"
 )
@@ -77,6 +78,8 @@ type File struct {
 	ByteEntropy      []int                  `json:"byte_entropy,omitempty"`
 	Type             string                 `json:"type,omitempty"`
 	Yara             []string               `json:"yara,omitempty"`
+	IsNotPE			 bool				    `json:"is_not_pe,omitempty"`
+	DBModel			 models.DBModel			`json:"vm_detect,omitempty"`
 }
 
 type StringStruct struct {

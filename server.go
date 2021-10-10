@@ -2,6 +2,7 @@ package connect
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/google/wire"
@@ -13,6 +14,8 @@ import (
 	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
 	"github.com/terra-farm/go-virtualbox"
+	"go.mongodb.org/mongo-driver/mongo"
+	"time"
 )
 
 var (
@@ -28,6 +31,10 @@ type ServerConfig struct {
 	AgentPort      string   `mapstructure:"agent_port"`
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 	MaxFileSize    int64    `mapstructure:"maxFileSize"`
+	VBoxManage     string   `mapstructure:"vbox"`
+	VBoxName       string   `mapstructure:"vbox_name"`
+	VBoxSnapshot   string   `mapstructure:"vbox_snapshot"`
+	VBoxDumpPath   string   `mapstructure:"vm_dump_path"`
 }
 
 func ProvideServerConfig(cfg *viper.Viper) (ServerConfig, error) {
@@ -98,21 +105,52 @@ func (s *Server) AmqpHandler(msg amqp.Delivery) error {
 		}
 		logrus.Infof("%s sandbox found", vm.Name)
 		logrus.Infof("cpu %v, memory %v", vm.CPUs, vm.Memory)
-		if err := vm.Start(); err != nil {
-			logrus.Errorf("machine start failure %s", err)
+
+		logrus.Infof("VM 상태 : %s",vm.State)
+		if vm.State == "poweroff"{
+			s.VmRestore()
+			for {
+				time.Sleep(1 * time.Second)
+				if vm.State == "poweroff" || vm.State == "saved"{
+					vm.State = "running"
+					break
+				}
+			}
 		}
-		logrus.Infof("%s sandbox start", vm.Name)
-		s.vmRequest(resp.MinioObjectKey, resp.Sha256, resp.FileType, "download", "POST")
+		if vm.State == "running" || vm.State == "saved"{
+			for {
+				time.Sleep(1 * time.Second)
+				s.VmStart()
+				logrus.Infof("%s sandbox start", vm.Name)
+				if vm.State == "running" || vm.State == "saved"{
+					vm.State = "running"
+					break
+				}
+			}
+		}
+		time.Sleep(5 * time.Second)
+		s.VmResolution()
+		time.Sleep(10 * time.Second)
+		logrus.Info("분석 대기중")
+		if vm.State == "running"{
+			s.vmRequest(resp.MinioObjectKey, resp.Sha256, resp.FileType, "download", "POST")
+		}
 	} else {
+		ctx := context.Background()
+		file, err := s.ms.FileSearch(ctx, resp.Sha256)
+		if err != nil {
+			if !errors.Is(err, mongo.ErrNoDocuments) {
+				logrus.Errorf("DB에서 파일을 찾을 수 없습니다", err)
+			}
+		}
+		file.IsNotPE = true
+		file.Status = 5
+		file, err = s.ms.FileUpdate(ctx, file)
+		if err != nil {
+			logrus.Errorf("DB 업데이트 중 에러가 발생하였습니다", err)
+		}
+
 		logrus.Infof("job won't start because file is not pe")
 	}
-
-	//s.vmRequest(resp.MinioObjectKey, resp.Sha256, "download")
-
-	//if err := machine.Save(); err != nil {
-	//	logrus.Errorf("machine save failure %s", err)
-	//}
-	//logrus.Infof("%s sandbox saved", machine.Name)
-
 	return nil
 }

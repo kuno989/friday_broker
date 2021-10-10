@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func (s *Server) vmRequest(key, sha256, fileType, action, method string) {
+func (s *Server) vmRequest(key, sha256, fileType, action, method string) (string, string){
 	client := &http.Client{}
 	client.Timeout = time.Second * 20
 	res := schema.RequestMalwareScan{
@@ -46,6 +46,8 @@ func (s *Server) vmRequest(key, sha256, fileType, action, method string) {
 			logrus.Fatalf("failed to read response %v", err)
 		}
 		pid := fmt.Sprintf("%v",resp.Pid)
-		fmt.Printf("탐지된 프로세스:%s\npid : %s",resp.MalwareName, pid)
+		malName := resp.MalwareName
+		return malName, pid
 	}
+	return "", ""
 }
