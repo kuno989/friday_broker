@@ -70,14 +70,8 @@ func (s *Server) JobEnd(c echo.Context) error {
 	file.DBModel = resp
 
 	var pid string
-	var childPID string
-	var malName string
-
-	//for _, mal := range file.DBModel.ProcessCreate {
-	//	if strings.Contains(mal.ProcessPath, sha256) && strings.Contains(mal.ProcessName, sha256){
-	//		pid = mal.ChildPID
-	//	}
-	//}
+	//var childPID string
+	//var malName string
 
 	for _, mal := range file.DBModel.ProcessCreate {
 		if strings.Contains(mal.ProcessPath, sha256) && !strings.Contains(mal.Operation, `C:\Windows\system32\cmd.exe`){
@@ -85,24 +79,29 @@ func (s *Server) JobEnd(c echo.Context) error {
 		}
 	}
 
-	for _, mal := range file.DBModel.ProcessCreate {
-		if mal.PID == pid {
-			pid = mal.PID
-			childPID = mal.ChildPID
-			malName = mal.ProcessName
+	if pid == ""{
+		for _, mal := range file.DBModel.ProcessCreate {
+			if strings.Contains(mal.Operation, sha256){
+				pid = mal.ChildPID
+			}
 		}
 	}
 
-	//for _, mal := range file.DBModel.ProcessCreate {
-	//	if mal.PID == pid {
-	//		pid = mal.ChildPID
-	//		malName = mal.ProcessName
-	//	}
-	//}
-
-	file.DBModel.MalName = malName
 	file.DBModel.MalPid = pid
-	file.DBModel.MalChildPid = childPID
+	file.DBModel.MalName = sha256 + ".exe"
+
+	for _, sub := range file.DBModel.ProcessCreate{
+		if strings.Contains(sub.ProcessName, "svchost"){
+			if strings.Contains(sub.Operation, "DllHost"){
+				for _, cf := range file.DBModel.CreateFile{
+					if cf.PID == sub.ChildPID{
+						file.DBModel.SubPid = sub.ChildPID
+					}
+				}
+			}
+		}
+	}
+
 	file.IsNotPE = false
 
 	file, err = s.ms.FileUpdate(ctx, file)
